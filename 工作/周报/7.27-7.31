@@ -1,0 +1,18 @@
+ERP:
+DOPS-87030 【WOWCOLOUR】.马来正式环境部署CSP
+DOPS-86831【中通超市】高可用性多节点部署
+DOPS-87055 【海鼎SEC】测试环境部署自助transfer
+DOPS-87146 【梅尼】--正式环境部署资料同步组件
+DOPS-87121 【优鲜美佳】私有化-UAT-门店运营平台-MAS进件（含部署：mkh-mas-transfer）
+DOPS-87160 【鲜果空间】测试环境 up-connector-service
+DOPS-87159 【名创国际试点】 测试环境印尼第三方支付服务透传网关组件litepay-server部署
+
+CRM:
+DOPS-87136 【雅品嘉】.正式环境申请部署cms-service与mongodb
+DOPS-87021【丹东鹏飞】crm测试环境申请部署cms-service与mongodb
+DOPS-87232 【海宁海港】测试环境CRM 部署capp 和 cms 组件
+
+监控:
+DOPS-87258 【中通超市】数据库服务器迁移，目前121监控服务器存在异常
+DOPS-87030 WOWCOLOUR.马来正式环境部署CSP
+DOPS-87224 ERP发现如下项目cmdb文件中定义的主机IP与实际监控采集主机不一致

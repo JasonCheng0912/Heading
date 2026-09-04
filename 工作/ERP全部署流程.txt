@@ -1,0 +1,45 @@
+ 
+整体链路：资源筹备 → OPS宿主机初始化 → 三分支配置编写 → 流水线生成 → 数据库+应用批量部署 → 网关发布 → 验收交付，全程靠标准化Jenkins Job驱动，下面逐阶段拆解。
+
+## 阶段一：前期资源筹备  
+流程内两个核心前置操作，是所有部署的基础，必须最先完成：
+1. **创建Apollo应用**：调用平台Job录入所有业务组件清单、客户编码8881、管理员权限，生成专属appid、token、客户别名zjywvtvt，后续所有微服务启动都要靠这个token拉取动态配置；
+2. **申请Toolset私有Git仓库**：自动生成客户独立配置仓库，内置`jenkins/erp/develop`三大分支模板，分别管流水线、业务参数、网关路由，实现配置代码化、可追溯。
+这一步相当于提前备好两套核心“配置底座”，没有这两个资源，后面环境无法落地。
+
+## 阶段二：OPS宿主机初始化 
+拿到仓库后，先搭建Jenkins运维调度服务器，共6步固定顺序：
+1. 执行`GLOBLE_Centos_Init`初始化Job，标准化系统、Docker、磁盘环境；
+2. 手工执行Docker脚本部署Jenkins容器；
+3. 配置公网访问、出口白名单，开通外网拉镜像、访问Apollo权限；
+4. Jenkins后台配置Git、Harbor等全局凭证；
+5. 生成SSH密钥，配置免密登录业务服务器的dnet普通用户；
+6. 校验免密连通性，保证Jenkins能远程操控目标业务机器。
+本阶段核心目标：搭好自动化调度引擎Jenkins，打通运维机到业务服务器的远程通道。
+
+## 阶段三：Toolset三大分支配置修改 
+
+1. **jenkins分支**：修改流水线模板（project-app、db、basic-auth、view等yml），定义后续部署Job的执行逻辑；
+2. **erp分支**：修改核心业务参数，包含`all.yaml`全局环境、`erpcmdb.yaml`服务器资产、`erp.csv`微服务清单；这里埋下关键分支联动：第四阶段执行完`ERP_basic_auth`生成密钥后，需要回来把密钥粘贴到本分支`app.yaml`，再次提交代码；
+3. **develop分支**：修改OpenResty网关配置，hdpos.conf路由规则、upstream后端端口、Ansible推送清单；
+三个分支全部改完提交Git，Jenkins才能读取到最新配置，是衔接配置和流水线的核心环节。
+
+## 阶段四：生成自动化流水线 
+执行3个固定顺序Jenkins Job，刷出整套ERP部署任务：
+1. `GLOBLE_update_jenkins_config`：读取jcac配置文件，刷新Jenkins站点地址、管理员邮箱、全局系统参数，完成Jenkins环境初始化；
+2. `GLOBLE-update-jenkins-jobs`：核心刷新Job，读取jenkins分支模板，调用API批量生成ERP视图、数据库部署、应用部署、凭证生成全套流水线；
+3. `ERP_basic_auth`：读取服务器和组件清单，自动生成所有微服务对接认证密钥；
+> 重点补充：拿到密钥后，必须回到阶段三的erp分支，将密钥填入app.yaml、重新提交Git，才能进入下一阶段部署应用。
+
+## 阶段五：核心业务批量部署 
+
+1. 先执行`ERP_db_deploy_int`：读取erpcmdb、all.yaml里Oracle库信息，远程连接数据库，自动执行建表、初始化基础数据、版本升级脚本；
+2. 第二次执行`ERP_app_deploy_int`：部署系统必备中间件，Redis、license-server、oss-mysql、rumba-oss；
+3. 第三次执行`ERP_app_deploy_int`：勾选首次安装，批量拉取所有业务微服务镜像、创建容器，同时调用cmdb里配置的健康接口，自动校验每个服务启动正常；
+本阶段完成后，所有后端业务、缓存、数据库全部正常运行，但用户还无法访问，缺少网关转发。
+
+## 阶段六：网关发布 + 验收收尾 
+1. 执行`GLOBLE_deploy_nginx`网关Job：读取develop分支的Nginx配置，通过Ansible推送到业务服务器OpenResty并重载，完成公网路由转发；
+2. 验收环节：打开Wiki页面，逐个验证所有业务应用外网访问地址，确认页面、接口、报表功能正常；
+3. 核对无误后，在任务单备注Wiki链接，提交验收单，整套ERP部署流程正式闭环。
+ 

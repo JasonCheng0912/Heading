@@ -1,0 +1,97 @@
+ERP Job 完整刷新生成流程
+1. 前置配置准备
+修改 toolset 仓库jenkins分支内全部 yml 模板（view、project-app、project-db、project-basic），填写业务服务器 IP、部署组件清单、数据库 JDBC 映射，同时维护jenkins_jobs.ini（写入 Jenkins 内网地址）、jenkins_update.sh批量执行脚本，提交 Git 保存配置模板。
+2. 执行前置全局初始化 Job
+先运行GLOBLE_update_jenkins_config，刷新 Jenkins 全局系统配置、Git 凭证、管理员信息，保证后续 API 调用、仓库拉取权限正常。
+3. 执行核心刷新任务 GLOBLE-update-jenkins-jobs
+该 Job 会拉取 toolset jenkins 分支代码，运行jenkins_update.sh脚本，启动jenkins-job-builder容器工具，读取所有 ERP 专用 YAML 任务模板。
+4. JJB 工具解析模板、调用 Jenkins API 生成 Job
+工具读取 4 类核心模板自动创建流水线：
+view.yml：生成 ERP 视图分组，自动归类所有 ERP 任务；
+project-basic.yml：生成ERP_basic_auth凭证生成任务；
+project-db.yml：生成ERP_db_deploy_int数据库初始化部署任务；
+project-app.yml：生成ERP_app_deploy_int业务容器批量部署任务。
+5. 页面自动渲染出全套 ERP Job
+脚本执行完成后，Jenkins 后台自动新增 3 个核心 ERP 流水线 + ERP 视图，页面刷新即可看见ERP_basic_auth、ERP_db_deploy_int、ERP_app_deploy_int，全部 ERP 系列 Job 刷新完成，可直接执行部署流程。
+
+
+
+## 4.toolset配置修改
+### 4.1  jenkins分支修改内容
+ 
+
+- `config/jenkins.yaml` //Jenkins 全局基础配置，内网地址
+
+- `config/jenkins-jcac-plugin.yaml` //自动化插件配置
+
+- `jenkins/h6/tool/project-basic.yml ` //生成h6应用认证凭证JOB
+
+- `jenkins/h6/project-db.yml` //h6数据库安装和升级的JOB
+
+- `jenkins/h6/int/project-app.yml`//h6应用安装和升级的JOB
+
+- `jenkins/h6/view.yml`//创建 ERP 分组视图，自动归类所有 ERP 相关 Job，方便页面查找。
+
+- `jenkins_jobs.ini`//刷新 Jenkins 部署 Job 的基础配置
+
+- `jenkins_update.sh`//批量创建更新 Jenkins 所有ERP自动化 Job 
+
+
+
+### 4.2 erp分支修改内容
+ 
+
+涉及文件：
+- `all.yaml`：全环境公共参数统一配置
+- `apollo.yaml`：存储平台 token，所有服务启动时拉取远程配置使用。
+- `app.yaml`：执行 basic_auth 后把认证密钥填入此文件供服务读
+- ` erp.csv`应用部署清单表格：记录每个微服务客户编码、部署主机、镜像版本、镜像仓库、内外端口、健康检查超时，自动化部署脚本读取本表批量拉起容器
+- `erpcmdb.yaml`  它是ERP环境的“元数据配置文件”，统一记录了应用部署所需的所有静态信息，包括主机、镜像、端口、版本和健康检查路径等。
+
+定义了目标主机的拓扑信息（hosts部分），包括主机IP、SSH端口、用户、分组等，供Ansible和Jenkins识别部署目标。
+
+记录了每个微服务的部署清单（containers部分），包含镜像名称、版本号、容器端口、管理端口、Apollo应用ID等，是自动化部署脚本读取的核心数据源。
+
+配置了每个服务的健康检查路径（subsystems部分），Jenkins部署后通过访问这些路径验证容器是否启动成功。
+
+### 4.3  develop分支修改内容
+#### 涉及文件
+
+
+- `hdpos.conf` //OpenResty 站点核心规则，配置监听 80 端口、URL 路径location匹配、日志、超时、文件上传限制；根据路径转发到 upstream.conf 里定义的后端服务，对外提供访问路由。
+
+- `upstream.conf` //存储所有微服务的内网 IP + 容器端口映射，定义upstream块，是 hdpos.conf 转发的目标地址来源，一一对应所有 ERP 业务组件。
+
+- `inventory`//记录 OpenResty 网关部署服务器 IP，推送配置时 Ansible 识别目标机器，确定把 hdpos/upstream 配置推送到哪台业务服务器。
+
+- `main.yml`//指定当前环境为integration_test，区分测试 / 生产环境，控制 Ansible 部署脚本的执行逻辑、环境变量加载。
+ 
+
+
+# 所有Jenkins Job完整功能说明
+## 1. GLOBLE_Centos_Init
+OPS宿主机初始化任务，自动格式化磁盘、配置docker网段、挂载数据盘、预设root账号密码，完成部署前置服务器环境标准化。
+
+## 2. GLOBLE_update_jenkins_config
+Jenkins全局配置刷新，读取jcac配置文件，更新站点邮箱、访问地址、系统全局凭证与权限，初始化Jenkins基础环境。
+
+## 3. GLOBLE-update-jenkins-jobs
+读取toolset jenkins分支流水线模板，调用jenkins-job-builder批量生成/更新ERP全套视图与部署Job。
+
+## 4. ERP_basic_auth
+读取服务器与组件清单，自动生成所有微服务对接所需接口认证密钥，输出后填入erp分支app.yaml。
+
+## 5. ERP_db_deploy_int
+读取erpcmdb、all.yaml数据库配置，远程连接Oracle执行建表、初始化数据、版本升级脚本，完成数据库部署。
+
+## 6. ERP_app_deploy_int
+读取erpcmdb、erp.csv、containers配置，从Harbor拉取镜像，批量创建/重启业务、中间件容器，并调用健康接口校验服务。
+
+## 7. GLOBLE_deploy_nginx
+读取develop分支hdpos.conf、upstream.conf、inventory网关配置，通过Ansible下发至OpenResty服务器并重载网关。
+
+## 8. create_ka_apollo_appid(不需要 已优化)
+批量创建客户Apollo应用，录入apps组件列表、客户编码、管理员权限，生成对应apollo_token。
+
+## 9. create_new_toolset
+新建客户专属toolset私有Git仓库，预设jenkins/erp/develop三大分支基础模板。
